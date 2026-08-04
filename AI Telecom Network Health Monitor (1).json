@@ -1,0 +1,281 @@
+{
+  "name": "AI Telecom Network Health Monitor",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "01f2a279-e027-4076-8502-9c531a28199d",
+      "name": "When clicking ‘Execute workflow’",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [\n  {\n    json: {\n      device: \"Router-R1\",\n      ip_address: \"10.10.1.1\",\n      bgp_status: \"DOWN\",\n      interface_status: \"DOWN\",\n      cpu_usage: 95,\n      memory_usage: 80,\n      packet_loss: 10\n    }\n  },\n  {\n    json: {\n      device: \"Router-R2\",\n      ip_address: \"10.10.1.2\",\n      bgp_status: \"UP\",\n      interface_status: \"UP\",\n      cpu_usage: 30,\n      memory_usage: 45,\n      packet_loss: 0\n    }\n  },\n  {\n    json: {\n      device: \"Router-R3\",\n      ip_address: \"10.10.1.3\",\n      bgp_status: \"DOWN\",\n      interface_status: \"UP\",\n      cpu_usage: 85,\n      memory_usage: 75,\n      packet_loss: 5\n    }\n  },\n  {\n    json: {\n      device: \"Router-R4\",\n      ip_address: \"10.10.1.4\",\n      bgp_status: \"UP\",\n      interface_status: \"DOWN\",\n      cpu_usage: 90,\n      memory_usage: 88,\n      packet_loss: 8\n    }\n  },\n  {\n    json: {\n      device: \"Router-R5\",\n      ip_address: \"10.10.1.5\",\n      bgp_status: \"UP\",\n      interface_status: \"UP\",\n      cpu_usage: 25,\n      memory_usage: 35,\n      packet_loss: 0\n    }\n  }\n];"
+      },
+      "id": "f1d4bc39-70cb-4104-8868-161e8c6bb35d",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Analyze the following telecom network health data:\n\nDevice: {{$json.device}}\nIP Address: {{$json.ip_address}}\nBGP Status: {{$json.bgp_status}}\nInterface Status: {{$json.interface_status}}\nCPU Usage: {{$json.cpu_usage}}%\nMemory Usage: {{$json.memory_usage}}%\nPacket Loss: {{$json.packet_loss}}%\n\nIdentify:\n1. Network issue\n2. Severity level (Low/Medium/High/Critical)\n3. Possible root cause\n4. Recommended action\n\nReturn the response only in JSON format:\n\n{\n \"device\": \"\",\n \"health_score\": \"\",\n \"severity\": \"\",\n \"network_issue\": \"\",\n \"root_cause\": \"\",\n \"recommended_action\": \"\"\n}\nAlways return the answer in valid JSON format only. Do not use markdown.\n\nAlways return the device field in this format:\nRouter-R3 (10.10.1.3)\n\nDo not return only the router name.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a telecom network health analyst. Analyze the provided device metrics and return a concise structured assessment. Always respond with valid JSON only, never markdown."
+        }
+      },
+      "id": "81397bbe-2721-43e2-be98-361095e16370",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        448,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "id": "003737ff-af61-4eeb-a8a1-b3a8d9db6dc6",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        464,
+        336
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "oE2X63J38Q2yLZ3e",
+          "name": "Google Gemini(PaLM) Api account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"state\": \"Critical\",\n  \"device\": \"Router-R1\",\n  \"health_score\": \"10%\",\n  \"issue\": \"BGP and Interface DOWN\",\n  \"cause\": \"95% CPU Usage\",\n  \"action\": \"Reboot and process analysis\"\n}"
+      },
+      "id": "433b8f65-e30c-4ccd-a94e-04607fb99156",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        640,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const metrics = $('Code in JavaScript').all();\nconst ai = $('AI Agent').all();\n\nreturn metrics.map((m, i) => {\n  const d = m.json;\n  const a = (ai[i] && ai[i].json && ai[i].json.output) ? ai[i].json.output : {};\n\n  // Deterministic health score out of 100 (reliable, not AI-guessed)\n  let score = 100;\n  if (d.bgp_status === 'DOWN') score -= 30;\n  if (d.interface_status === 'DOWN') score -= 30;\n  if (d.cpu_usage > 90) score -= 20; else if (d.cpu_usage > 75) score -= 10;\n  if (d.memory_usage > 85) score -= 10; else if (d.memory_usage > 70) score -= 5;\n  if (d.packet_loss > 5) score -= 15; else if (d.packet_loss > 0) score -= 5;\n  if (score < 0) score = 0;\n\n  const state = score <= 50 ? 'Critical' : 'Healthy';\n\n  return {\n    json: {\n      device: d.device,\n      ip_address: d.ip_address,\n      state: state,\n      health_score: score,\n      health_display: score + '/100',\n      issue: a.issue || a.network_issue || (state === 'Critical' ? 'Degraded network metrics detected' : 'No issue detected'),\n      cause: a.cause || a.root_cause || 'N/A',\n      action: a.action || a.recommended_action || (state === 'Critical' ? 'Investigate device' : 'No action required')\n    }\n  };\n});"
+      },
+      "id": "06a5cd77-3f37-4487-94e3-23286f7228dd",
+      "name": "Score Devices",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2cda84c0-6958-4514-8894-c93da1e9c562",
+              "leftValue": "={{$json.state}}",
+              "rightValue": "Critical",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "169cbb30-9213-420e-931f-f61787fa41aa",
+      "name": "If",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1024,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "project": {
+          "__rl": true,
+          "value": "10001",
+          "mode": "list",
+          "cachedResultName": "Priyanshu's Kanban",
+          "cachedResultUrl": ""
+        },
+        "issueType": {
+          "__rl": true,
+          "value": "10007",
+          "mode": "list",
+          "cachedResultName": "Task"
+        },
+        "summary": "=Critical Network Alert - {{$json.device}} ({{$json.ip_address}})",
+        "additionalFields": {
+          "description": "=AI Telecom Network Alert\n\nDevice: {{$json.device}} ({{$json.ip_address}})\nHealth Score: {{$json.health_display}}\nState: {{$json.state}}\nIssue: {{$json.issue}}\nRoot Cause: {{$json.cause}}\nRecommended Action: {{$json.action}}"
+        }
+      },
+      "id": "e72b5e75-ec65-425f-b37a-aef6ad0d7189",
+      "name": "Create an issue",
+      "type": "n8n-nodes-base.jira",
+      "typeVersion": 1,
+      "position": [
+        1248,
+        112
+      ],
+      "credentials": {
+        "jiraSoftwareCloudApi": {
+          "id": "mZikAKdQyihfFWmi",
+          "name": "Jira SW Cloud account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const devices = $('Score Devices').all().map(i => i.json);\n\nlet tickets = [];\ntry { tickets = $('Create an issue').all().map(i => i.json); } catch (e) { tickets = []; }\n\n// Critical devices are sent to Jira in order, so match tickets by order\nlet ci = 0;\nconst rows = devices.map(d => {\n  let ticket = '\\u274C';\n  if (d.state === 'Critical') {\n    const t = tickets[ci];\n    ticket = (t && t.key) ? ('\\u2705 ' + t.key) : '\\u2705 (created)';\n    ci++;\n  }\n  return { device: d.device, state: d.state, health_score: d.health_display, jira_ticket: ticket };\n});\n\nlet table = '| Device | State | Health Score | Jira Ticket |\\n';\ntable += '| --- | --- | --- | --- |\\n';\nfor (const r of rows) {\n  table += '| ' + r.device + ' | ' + r.state + ' | ' + r.health_score + ' | ' + r.jira_ticket + ' |\\n';\n}\n\nconst criticalCount = rows.filter(r => r.state === 'Critical').length;\n\nreturn [{\n  json: {\n    report_table: table,\n    total_routers: devices.length,\n    critical_routers: criticalCount,\n    healthy_routers: devices.length - criticalCount,\n    jira_tickets_created: tickets.length,\n    timestamp: $now.toISO(),\n    rows: rows\n  }\n}];"
+      },
+      "id": "0ba13f79-6e8b-49f6-89d8-9568eaec4e86",
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1472,
+        112
+      ],
+      "executeOnce": true
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Score Devices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Devices": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Create an issue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an issue": {
+      "main": [
+        [
+          {
+            "node": "Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "30222daa-db83-4ae8-8513-a3be66de6779",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c066abb7ec15bf55ea571c2e50839d426a4861955d3dd15ced15db3ed40d8614"
+  },
+  "nodeGroups": [],
+  "id": "v6yvH5fNRLk0wp7J",
+  "tags": []
+}
